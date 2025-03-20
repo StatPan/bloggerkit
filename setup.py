@@ -1,11 +1,10 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name='bloggerkit',
     version='0.1.0',
     packages=['.'],
     install_requires=[
-        'urllib3',
     ],
     author='StatPan Lab',
     author_email='statpan@naver.com',
