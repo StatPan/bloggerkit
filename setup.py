@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 try:
     with open("README.md", "r", encoding="utf-8") as f:
@@ -8,8 +8,8 @@ except FileNotFoundError:
 
 setup(
     name='bloggerkit',
-    version='0.2.0',
-    packages=['.'],
+    version='0.4.0',
+    packages=find_packages(),
     install_requires=[
     ],
     author='StatPan Lab',
