@@ -1,58 +1,67 @@
-import urllib.request
-import urllib.parse
-import json
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import os
 from typing import Optional, List, Dict, Any
+
 from bloggerkit.model import Author, Blog, Replies, Post, PostList, Error
 
+# Blogger API에 필요한 Scope 설정
+SCOPES = ['https://www.googleapis.com/auth/blogger']
+# API 이름 및 버전
+API_SERVICE_NAME = 'blogger'
+API_VERSION = 'v3'
+# 토큰 파일 이름 (클래스 내부에서 관리)
+TOKEN_FILE = 'token.json'
+
 class BloggerClient:
-    """A client for interacting with the Google Blogger API.
+    """A client for interacting with the Google Blogger API using OAuth 2.0."""
 
-    Attributes:
-        api_key: The API key for accessing the Blogger API.
-        blog_id: The ID of the blog to interact with.
-    """
-
-    def __init__(self, api_key: str, blog_id: str) -> None:
-        """Initializes the BloggerClient with an API key and blog ID.
+    def __init__(self, blog_id: str, client_secrets_file: str) -> None:
+        """Initializes the BloggerClient with a blog ID and OAuth 2.0 credentials.
 
         Args:
-            api_key: The API key for accessing the Blogger API.
             blog_id: The ID of the blog to interact with.
+            client_secrets_file: The path to the client_secrets.json file.
         """
-        self.api_key = api_key
         self.blog_id = blog_id
+        self.client_secrets_file = client_secrets_file  # client_secrets.json 파일 경로 저장
+        self.service = self._authenticate()
 
-    def _api_request(self, url: str, method: str = "GET", data: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
-        """Sends a request to the Blogger API.
+    def _authenticate(self):
+        """Authenticates with Google using OAuth 2.0 and returns the Blogger service."""
+        creds = None
 
-        Args:
-            url: The URL to send the request to.
-            method: The HTTP method to use (default: "GET").
-            data: The data to send with the request (default: None).
-            headers: The headers to send with the request (default: None).
+        # token.json 파일에 사용자 인증 정보가 저장되어 있는지 확인
+        if os.path.exists(TOKEN_FILE):
+            creds = google.oauth2.credentials.Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
 
-        Returns:
-            The JSON response from the API, or None if an error occurred.
-        """
-        url += f"?key={self.api_key}"
+        # (아직) 유효한 인증 정보가 없다면, 사용자에게 로그인 요청
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(google.auth.transport.requests.Request())
+                except Exception as e:
+                    print(f"Error refreshing credentials: {e}")
+                    os.remove(TOKEN_FILE)  # 토큰 갱신에 실패하면 토큰 파일 삭제 후 재인증 시도
+                    return self._authenticate()  # 재귀 호출을 통해 다시 인증 시도
+            else:
+                flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+                    self.client_secrets_file, SCOPES)  # client_secrets_file 사용
+                creds = flow.run_local_server(port=0)
 
-        if data:
-            data = json.dumps(data).encode("utf-8")
-            headers = {"Content-Type": "application/json"}
-            req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        else:
-            req = urllib.request.Request(url, method=method)
+            # 인증 정보를 token.json 파일에 저장
+            with open(TOKEN_FILE, 'w') as token:
+                token.write(creds.to_json())
 
         try:
-            with urllib.request.urlopen(req) as response:
-                if response.getcode() in (200, 201):
-                    return json.loads(response.read().decode("utf-8"))
-                else:
-                    # Create Error object for non-200 responses
-                    return Error(code=response.getcode(), message="Request failed")
-        except urllib.error.HTTPError as e:
-            # Create Error object for HTTP errors
-            return Error(code=e.code, message=e.read().decode("utf-8"))
+            # Construct the service object for the Blogger API.
+            return build(API_SERVICE_NAME, API_VERSION, credentials=creds)
+
+        except Exception as e:
+            print(f"Error during authentication: {e}")
+            return None
 
     def list_posts(self) -> Optional[PostList]:
         """Lists all posts in the blog.
@@ -60,11 +69,10 @@ class BloggerClient:
         Returns:
             A PostList object containing the list of posts, or None if an error occurred.
         """
-        api_url = f"https://www.googleapis.com/blogger/v3/blogs/{self.blog_id}/posts"
-        response = self._api_request(api_url)
-        if response:
+        try:
+            results = self.service.posts().list(blogId=self.blog_id).execute()
             posts = []
-            for item in response.get("items", []):
+            for item in results.get("items", []):
                 author_data = item.get("author", {})
                 author = Author(
                     displayName=author_data.get("displayName", ""),
@@ -96,12 +104,14 @@ class BloggerClient:
                 )
                 posts.append(post)
             return PostList(
-                kind=response.get("kind", ""),
-                nextPageToken=response.get("nextPageToken", ""),
+                kind=results.get("kind", ""),
+                nextPageToken=results.get("nextPageToken", ""),
                 items=posts,
-                etag=response.get("etag", ""),
+                etag=results.get("etag", ""),
             )
-        return None
+        except HttpError as e:
+            print(f"An HTTP error occurred: {e}")
+            return None
 
     def create_post(self, title: str, content: str) -> Optional[Dict[str, Any]]:
         """Creates a new post in the blog.
@@ -113,13 +123,17 @@ class BloggerClient:
         Returns:
             A dictionary containing the new post, or None if an error occurred.
         """
-        api_url = f"https://www.googleapis.com/blogger/v3/blogs/{self.blog_id}/posts"
-        post_data = {
-            "title": title,
-            "content": content,
+        post_body = {
+            'title': title,
+            'content': content
         }
-        return self._api_request(api_url, method="POST", data=post_data)
-    
+        try:
+            results = self.service.posts().insert(blogId=self.blog_id, body=post_body).execute()
+            return results
+        except HttpError as e:
+            print(f"An HTTP error occurred: {e}")
+            return None
+
     def get_post(self, post_id: str) -> Optional[Post]:
         """Retrieves a specific post from the blog.
 
@@ -129,22 +143,19 @@ class BloggerClient:
         Returns:
             A Post object containing the post, or None if an error occurred.
         """
-        api_url = f"https://www.googleapis.com/blogger/v3/blogs/{self.blog_id}/posts/{post_id}"
-        response = self._api_request(api_url)
-        if isinstance(response, Error):
-            print(f"Error retrieving post: {response.message}")
-            return None
-        if response:
-            author_data = response.get("author", {})
+        try:
+            results = self.service.posts().get(blogId=self.blog_id, postId=post_id).execute()
+
+            author_data = results.get("author", {})
             author = Author(
                 displayName=author_data.get("displayName", ""),
                 id=author_data.get("id", ""),
                 image=author_data.get("image", {}),
                 url=author_data.get("url", ""),
             )
-            blog_data = response.get("blog", {})
+            blog_data = results.get("blog", {})
             blog = Blog(id=blog_data.get("id", ""))
-            replies_data = response.get("replies", {})
+            replies_data = results.get("replies", {})
             replies = Replies(
                 selfLink=replies_data.get("selfLink", ""),
                 totalItems=replies_data.get("totalItems", ""),
@@ -152,19 +163,21 @@ class BloggerClient:
             return Post(
                 author=author,
                 blog=blog,
-                content=response.get("content", ""),
-                etag=response.get("etag", ""),
-                id=response.get("id", ""),
-                kind=response.get("kind", ""),
-                labels=response.get("labels", []),
-                published=response.get("published", ""),
+                content=results.get("content", ""),
+                etag=results.get("etag", ""),
+                id=results.get("id", ""),
+                kind=results.get("kind", ""),
+                labels=results.get("labels", []),
+                published=results.get("published", ""),
                 replies=replies,
-                selfLink=response.get("selfLink", ""),
-                title=response.get("title", ""),
-                updated=response.get("updated", ""),
-                url=response.get("url", ""),
+                selfLink=results.get("selfLink", ""),
+                title=results.get("title", ""),
+                updated=results.get("updated", ""),
+                url=results.get("url", ""),
             )
-        return None
+        except HttpError as e:
+            print(f"An HTTP error occurred: {e}")
+            return None
 
     def update_post(self, post_id: str, title: str, content: str) -> Optional[Dict[str, Any]]:
         """Updates a specific post in the blog.
@@ -177,12 +190,16 @@ class BloggerClient:
         Returns:
             A dictionary containing the updated post, or None if an error occurred.
         """
-        api_url = f"https://www.googleapis.com/blogger/v3/blogs/{self.blog_id}/posts/{post_id}"
-        post_data = {
-            "title": title,
-            "content": content,
+        post_body = {
+            'title': title,
+            'content': content
         }
-        return self._api_request(api_url, method="PUT", data=post_data)
+        try:
+            results = self.service.posts().update(blogId=self.blog_id, postId=post_id, body=post_body).execute()
+            return results
+        except HttpError as e:
+            print(f"An HTTP error occurred: {e}")
+            return None
 
     def delete_post(self, post_id: str) -> Optional[Dict[str, Any]]:
         """Deletes a specific post from the blog.
@@ -193,78 +210,41 @@ class BloggerClient:
         Returns:
             A dictionary containing the deleted post, or None if an error occurred.
         """
-        api_url = f"https://www.googleapis.com/blogger/v3/blogs/{self.blog_id}/posts/{post_id}"
-        return self._api_request(api_url, method="DELETE")
+        try:
+            self.service.posts().delete(blogId=self.blog_id, postId=post_id).execute()
+            return {} # 성공적으로 삭제된 경우 빈 딕셔너리 반환
+        except HttpError as e:
+            print(f"An HTTP error occurred: {e}")
+            return None
 
 if __name__ == "__main__":
-    
-    api_key= "YOUR_API_KEY"
-    blog_id= "YOUR_BLOG_ID"
-    if api_key and blog_id:
-        client = BloggerClient(api_key=api_key, blog_id=blog_id)
-        post_list = client.list_posts()
-        if post_list:
-            print(f"Kind: {post_list.kind}")
-            print(f"Next Page Token: {post_list.nextPageToken}")
-            print(f"Etag: {post_list.etag}")
-            print("Items:")
-            for post in post_list.items:
-                print(f"  Title: {post.title}")
-                print(f"  ID: {post.id}")
-                print(f"  Author: {post.author.displayName}")
-                print("-" * 20)
-        else:
-            print("Failed to retrieve posts.")
+    # Replace with your blog ID and client_secrets.json path
+    blog_id = "YOUR_BLOD_ID"
+    client_secrets_file = "YOUR_CLIENT_SECRETS_FILE_PATH"
+    client = BloggerClient(blog_id, client_secrets_file)
 
-        # Get a specific post
-        if post_list and post_list.items:
-            first_post_id = post_list.items[0].id
-            post = client.get_post(first_post_id)
-            if post:
-                print("\nRetrieved Post:")
-                print(f"  Title: {post.title}")
-                print(f"  ID: {post.id}")
-                print(f"  Content: {post.content}")
-                print(f"  Author: {post.author.displayName}")
-                print(f"  Full Post: {post}")
-            else:
-                print(f"Failed to retrieve post with ID: {first_post_id}")
-        else:
-            print("No posts available to retrieve.")
+    # Example usage
+    # List posts
+    posts = client.list_posts()
+    if posts:
+        print("Posts:")
+        for post in posts.items:
+            print(f"- {post.title}: {post.url}")
 
-        # More tests for response stability
-        post_list = client.list_posts()
-        # Print full response for debugging
-        # print("\nFull PostList Response:")
-        # print(post_list)
-        if post_list and post_list.items:
-            print(f"\nTest 1: Retrieved PostList with {len(post_list.items)} items")
-            first_post_id = post_list.items[0].id
-            post = client.get_post(first_post_id)
-            if post:
-                print(f"Test 1: Retrieved Post with title: {post.title}")
-            else:
-                print(f"Test 1: Failed to retrieve post with ID: {first_post_id}")
+    # Create a new post
+    new_post = client.create_post("Test Post3", "This is a test post created using the Blogger API.")
+    if new_post:
+        print(f"New post created: {new_post.get('url')}")
 
-       # Test with non-existent post ID
-        post = client.get_post("non_existent_post_id")
-        if post:
-           print("Test 2: Retrieved Post with non-existent ID (Error!)")
-        elif isinstance(post, Error):
-           print(f"Test 2: Failed to retrieve Post with non-existent ID (OK). Error: {post.message}")
-        else:
-           print("Test 2: Failed to retrieve Post with non-existent ID (OK)")
+    # Get a specific post
+    # post = client.get_post("POST_ID")  # Replace with a valid post ID
+    # if post:
+    #     print(f"Post: {post.title}, {post.content}")
 
-        # Test with a different post ID
-        if post_list and len(post_list.items) > 1:
-            second_post_id = post_list.items[1].id
-            post = client.get_post(second_post_id)
-            if post:
-                print(f"Test 3: Retrieved Post with title: {post.title}")
-            else:
-                print(f"Test 3: Failed to retrieve post with ID: {second_post_id}")
-        else:
-            print("Test 3: Not enough posts to test with a different ID")
+    # Update a post
+    # updated_post = client.update_post("POST_ID", "Updated Test Post", "This is the updated content.")
+    # if updated_post:
+    #     print(f"Post updated: {updated_post.get('url')}")
 
-    else:
-        print("Please set the BLOGGER_APIKEY and BLOG_ID environment variables.")
+    # Delete a post
+    # deleted = client.delete_post("POST_ID")

@@ -9,3 +9,9 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+
+#private info
+token.json
+client_secrets.json
+.vscode
