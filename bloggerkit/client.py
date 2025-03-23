@@ -2,7 +2,7 @@ import urllib.request
 import urllib.parse
 import json
 from typing import Optional, List, Dict, Any
-from models import Author, Blog, Replies, Post, PostList, Error
+from bloggerkit.model import Author, Blog, Replies, Post, PostList, Error
 
 class BloggerClient:
     """A client for interacting with the Google Blogger API.
