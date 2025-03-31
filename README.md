@@ -30,7 +30,7 @@ This library now uses OAuth 2.0 for authentication. Follow these steps to set up
 ## Usage
 
 ```python
-from bloggerkit import BloggerClient
+from bloggerkit.client import BloggerClient
 
 # Replace with your blog ID and the path to your client_secrets.json file
 BLOG_ID = "YOUR_BLOG_ID"
