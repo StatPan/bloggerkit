@@ -113,7 +113,7 @@ class BloggerClient:
             print(f"An HTTP error occurred: {e}")
             return None
 
-    def create_post(self, title: str, content: str) -> Optional[Dict[str, Any]]:
+    def create_post(self, title: str, content: str, labels: List[str] = [""]) -> Optional[Dict[str, Any]]:
         """Creates a new post in the blog.
 
         Args:
@@ -125,7 +125,8 @@ class BloggerClient:
         """
         post_body = {
             'title': title,
-            'content': content
+            'content': content,
+            'labels':labels,
         }
         try:
             results = self.service.posts().insert(blogId=self.blog_id, body=post_body).execute()
