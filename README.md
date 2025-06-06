@@ -1,84 +1,230 @@
 # Bloggerkit
 
-A Python toolkit for interacting with the Google Blogger API.
+A Python toolkit for interacting with the Google Blogger API with **simplified authentication** and **enhanced features**.
 
-## Installation
+## ✨ What's New in v0.7.0
+
+🔧 **Environment Variable Support** - No more manual `credentials.json` management!  
+🚀 **Auto-generated Credentials** - Automatically creates credentials from environment variables  
+🔄 **Full Backward Compatibility** - All existing code continues to work unchanged  
+📝 **Enhanced Post Features** - Added `labels` and `is_draft` parameters  
+💬 **Improved User Experience** - Better error messages and helpful logging  
+
+## 📦 Installation
 
 ```bash
 pip install bloggerkit
 ```
 
-## Authentication
+## 🚀 Quick Start
 
-This library now uses OAuth 2.0 for authentication. Follow these steps to set up your credentials:
+### Method 1: Environment Variables (Recommended)
 
-1.  **Create a Google Cloud Project:**
-    *   Go to the [Google Cloud Console](https://console.cloud.google.com/).
-    *   Create a new project or select an existing one.
-2.  **Enable the Blogger API:**
-    *   In the Cloud Console, navigate to "APIs & Services" > "Library".
-    *   Search for "Blogger API" and enable it.
-3.  **Create OAuth 2.0 Credentials:**
-    *   Go to "APIs & Services" > "Credentials".
-    *   Click "Create Credentials" > "OAuth client ID".
-    *   Select "Desktop app" as the application type.
-    *   Give your client ID a name and click "Create".
-4.  **Download the client_secrets.json file:**
-    *   After creating the client ID, download the `client_secrets.json` file.
-    *   Place this file in your project directory.
+1. **Set up Google Cloud Console:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select existing one
+   - Enable the **Blogger API**
+   - Go to **APIs & Services** → **Credentials**
+   - Create **OAuth 2.0 Client ID** (Desktop Application)
+   - Copy the **Client ID** and **Client Secret**
 
-## Usage
+2. **Set environment variables:**
+   ```bash
+   # Add to your .env file or export directly
+   export GOOGLE_CLIENT_ID="your_client_id_here"
+   export GOOGLE_CLIENT_SECRET="your_client_secret_here"
+   export BLOG_ID="your_blog_id_here"
+   ```
+
+3. **Use bloggerkit:**
+   ```python
+   from bloggerkit.client import BloggerClient
+   
+   # Simple initialization - uses environment variables automatically
+   client = BloggerClient("your_blog_id")
+   
+   # Create a post
+   post = client.create_post(
+       title="My First Post",
+       content="<p>Hello World!</p>",
+       labels=["python", "blogging"],
+       is_draft=False
+   )
+   print(f"✅ Post created: {post['url']}")
+   ```
+
+### Method 2: Traditional credentials.json (Still Supported)
 
 ```python
 from bloggerkit.client import BloggerClient
 
-# Replace with your blog ID and the path to your client_secrets.json file
-BLOG_ID = "YOUR_BLOG_ID"
-CLIENT_SECRETS_FILE = "path/to/your/client_secrets.json"
-
-client = BloggerClient(BLOG_ID, CLIENT_SECRETS_FILE)
-
-# List posts
-posts = client.list_posts()
-if posts and "items" in posts:
-    for post in posts["items"]:
-        print(post['title'], post['url'])
-
-# Create a new post
-new_post = client.create_post("My New Post", "Content of my new post.")
-if new_post:
-    print(f"New post created: {new_post['url']}")
-
-# Get a specific post
-post = client.get_post("POST_ID")  # Replace with the actual post ID
-if post:
-    print(f"Post title: {post['title']}")
-
-# Update a post
-updated_post = client.update_post("POST_ID", "Updated Title", "Updated content.")  # Replace with the actual post ID
-if updated_post:
-    print(f"Post updated: {updated_post['url']}")
-
-# Delete a post
-client.delete_post("POST_ID")  # Replace with the actual post ID
-print("Post deleted successfully.")
+client = BloggerClient(
+    blog_id="your_blog_id",
+    client_secrets_file="path/to/credentials.json"
+)
 ```
 
-**Note:** 
+### Method 3: Direct Parameters
 
-*   Make sure to replace `YOUR_BLOG_ID`, `path/to/your/client_secrets.json` and `POST_ID` with your actual blog ID, the path to your `client_secrets.json` file, and post ID.
-*   The first time you run the script, it will open a web browser to authenticate with your Google account.
-*   A `token.json` file will be created to store your access token. If you change the `client_secrets.json` file, you may need to delete the `token.json` file and re-authenticate.
-*   The `BloggerClient` now takes the blog ID and the path to the `client_secrets.json` file as arguments.
+```python
+from bloggerkit.client import BloggerClient
 
-## Features
+client = BloggerClient(
+    blog_id="your_blog_id",
+    client_id="your_client_id",
+    client_secret="your_client_secret"
+)
+```
 
-*   `list_posts()`: Retrieves a list of all posts in the blog.
-*   `create_post(title, content)`: Creates a new post with the given title and content.
-*   `get_post(post_id)`: Retrieves a specific post by its ID.
-*   `update_post(post_id, title, content)`: Updates an existing post with the given ID, title, and content.
-*   `delete_post(post_id)`: Deletes a post with the given ID.
+## 📖 Usage Examples
 
-## Change Log
+### List Posts
+```python
+posts = client.list_posts()
+if posts:
+    for post in posts.items:
+        print(f"📄 {post.title}: {post.url}")
+```
 
-See [changelog.md](changelog.md) for details.
+### Create a Post
+```python
+# Basic post
+new_post = client.create_post(
+    title="My New Post",
+    content="<p>This is my new blog post content.</p>"
+)
+
+# Advanced post with labels and draft mode
+draft_post = client.create_post(
+    title="Draft Post",
+    content="<p>This is a draft post.</p>",
+    labels=["draft", "work-in-progress"],
+    is_draft=True
+)
+```
+
+### Get a Specific Post
+```python
+post = client.get_post("POST_ID")
+if post:
+    print(f"📖 Title: {post.title}")
+    print(f"🔗 URL: {post.url}")
+    print(f"🏷️ Labels: {post.labels}")
+```
+
+### Update a Post
+```python
+updated_post = client.update_post(
+    post_id="POST_ID",
+    title="Updated Title",
+    content="<p>Updated content goes here.</p>",
+    labels=["updated", "python"]
+)
+```
+
+### Delete a Post
+```python
+client.delete_post("POST_ID")
+print("🗑️ Post deleted successfully!")
+```
+
+## 🔐 Authentication Flow
+
+1. **First Run**: Browser opens for Google OAuth authentication
+2. **Token Storage**: Creates `token.json` for future automatic authentication  
+3. **Auto-refresh**: Automatically refreshes expired tokens
+4. **Seamless Experience**: No manual intervention needed after initial setup
+
+## 🔧 Configuration Priority
+
+bloggerkit uses the following priority order for authentication:
+
+1. **Direct Parameters** (`client_id`, `client_secret`)
+2. **Environment Variables** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`)
+3. **Credentials File** (`client_secrets_file`)
+
+## 🏷️ API Reference
+
+### BloggerClient
+
+```python
+BloggerClient(
+    blog_id: str,
+    client_secrets_file: str = None,
+    client_id: str = None,
+    client_secret: str = None
+)
+```
+
+### Methods
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `list_posts()` | Get all posts | None |
+| `create_post()` | Create new post | `title`, `content`, `labels=None`, `is_draft=False` |
+| `get_post()` | Get specific post | `post_id` |
+| `update_post()` | Update existing post | `post_id`, `title`, `content`, `labels=None` |
+| `delete_post()` | Delete post | `post_id` |
+
+## 🔄 Migration Guide
+
+### From v0.6.x to v0.7.0
+
+**No changes required!** Your existing code works exactly the same:
+
+```python
+# This still works perfectly
+client = BloggerClient(blog_id, client_secrets_file)
+```
+
+**Optional enhancement** - Simplify with environment variables:
+
+```python
+# Before (v0.6.x)
+client = BloggerClient("blog_id", "credentials.json")
+
+# After (v0.7.0) - Optional improvement
+os.environ['GOOGLE_CLIENT_ID'] = 'your_id'
+os.environ['GOOGLE_CLIENT_SECRET'] = 'your_secret'
+client = BloggerClient("blog_id")  # Much cleaner!
+```
+
+## 🛠️ Development Setup
+
+```bash
+git clone https://github.com/StatPan/bloggerkit.git
+cd bloggerkit
+pip install -e .
+```
+
+## 📋 Requirements
+
+- Python 3.10+
+- Google Blogger API access
+- OAuth 2.0 credentials
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 Change Log
+
+See [changelog.md](changelog.md) for detailed version history.
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 🆘 Support
+
+- 📖 [Documentation](https://github.com/StatPan/bloggerkit)
+- 🐛 [Issues](https://github.com/StatPan/bloggerkit/issues)
+- 💬 [Discussions](https://github.com/StatPan/bloggerkit/discussions)
+
+---
+
+**Happy Blogging! 🚀📝**
